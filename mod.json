@@ -8,10 +8,24 @@
 	},
 	"id": "legacy.syncgd",
 	"name": "SyncGD",
-	"version": "v1.1.0",
+	"version": "v1.0.0-beta.1",
 	"developer": "Legacy",
-	"description": "Advanced sync mod. Saves locally and to the cloud every 5 mins. Uses native notifications for cross-platform reliability.",
+	"description": "Advanced sync mod. Saves locally and to the cloud at a configurable interval. Handles offline mode with instant sync on reconnection.",
+	"repository": "https://github.com/guerrerooliver183-source/SyncGD",
 	"dependencies": {
 		"geode.node-ids": ">=v1.23.3"
+	},
+	"settings": {
+		"save-interval": {
+			"name": "Auto-Save Interval",
+			"description": "How many minutes to wait between each automatic save.",
+			"type": "int",
+			"default": 5,
+			"min": 1,
+			"max": 60,
+			"control": {
+				"type": "input"
+			}
+		}
 	}
 }
