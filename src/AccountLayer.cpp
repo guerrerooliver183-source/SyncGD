@@ -50,6 +50,8 @@ class $modify(SRAccountLayer, AccountLayer) {
     }
 
     void cancelBackup(CCObject* sender) {
+        if (!Mod::get()->getSettingValue<bool>("enable-saveretry")) return;
+        
         const auto notif = Notification::create(
             "Backup Cancelled - Finishing Last Attempt",
             NotificationIcon::Info
@@ -62,6 +64,8 @@ class $modify(SRAccountLayer, AccountLayer) {
 
     void customShowLoadingUI() {
         if (!Mod::get()->getSettingValue<bool>("enable-saveretry")) return;
+        if (!m_fields->m_cancelMenu || !m_fields->m_backupLabel || !m_fields->m_cancelButton) return;
+        
         m_fields->m_cancelMenu->setEnabled(true);
         m_fields->m_backupLabel->setString(fmt::format("Attempt {}", m_fields->m_attempts).c_str());
         m_fields->m_backupLabel->setVisible(true);
@@ -93,49 +97,57 @@ class $modify(SRAccountLayer, AccountLayer) {
     }
 
     void backupAccountFailed(const BackupAccountError p0, const int p1) {
-        if (Mod::get()->getSettingValue<bool>("enable-saveretry") && static_cast<int>(p0) == -1 && !m_fields->m_cancelled) {
-            incrementAttempt();
-            const auto gjam = GJAccountManager::sharedState();
-            const float profile = gjam->m_gameManagerSize * 0.00000095367;
-            const float levels = gjam->m_localLevelsSize * 0.00000095367;
-            if (profile + levels > 32.0) {
-                customHideLoadingUI();
-                m_fields->m_attempts = 1;
-                AccountLayer::backupAccountFailed(p0, p1);
+        if (Mod::get()->getSettingValue<bool>("enable-saveretry")) {
+            if (static_cast<int>(p0) == -1 && !m_fields->m_cancelled) {
+                incrementAttempt();
+                const auto gjam = GJAccountManager::sharedState();
+                const float profile = gjam->m_gameManagerSize * 0.00000095367;
+                const float levels = gjam->m_localLevelsSize * 0.00000095367;
+                if (profile + levels > 32.0) {
+                    customHideLoadingUI();
+                    m_fields->m_attempts = 1;
+                    AccountLayer::backupAccountFailed(p0, p1);
+                    return;
+                }
+                this->doBackup();
                 return;
             }
-            this->doBackup();
-            return;
+            customHideLoadingUI();
         }
-        customHideLoadingUI();
         AccountLayer::backupAccountFailed(p0, p1);
     }
 
     void backupAccountFinished() {
         AccountLayer::backupAccountFinished();
-        if (Mod::get()->getSettingValue<bool>("enable-saveretry")) showAttempts();
-        customHideLoadingUI();
+        if (Mod::get()->getSettingValue<bool>("enable-saveretry")) {
+            showAttempts();
+            customHideLoadingUI();
+        }
     }
 
     void syncAccountFailed(const BackupAccountError p0, const int p1) {
-        if (Mod::get()->getSettingValue<bool>("enable-saveretry") && static_cast<int>(p0) == -1 && !m_fields->m_cancelled) {
-            incrementAttempt();
-            this->doSync();
-            return;
+        if (Mod::get()->getSettingValue<bool>("enable-saveretry")) {
+            if (static_cast<int>(p0) == -1 && !m_fields->m_cancelled) {
+                incrementAttempt();
+                this->doSync();
+                return;
+            }
+            customHideLoadingUI();
         }
-        customHideLoadingUI();
         AccountLayer::syncAccountFailed(p0, p1);
     }
 
     void syncAccountFinished() {
         AccountLayer::syncAccountFinished();
-        if (Mod::get()->getSettingValue<bool>("enable-saveretry")) showAttempts();
-        customHideLoadingUI();
+        if (Mod::get()->getSettingValue<bool>("enable-saveretry")) {
+            showAttempts();
+            customHideLoadingUI();
+        }
     }
 
     void FLAlert_Clicked(FLAlertLayer *p0, bool p1) {
         AccountLayer::FLAlert_Clicked(p0, p1);
-        if (p1 == true) {
+        if (p1 == true && Mod::get()->getSettingValue<bool>("enable-saveretry")) {
             customShowLoadingUI();
         }
     }
