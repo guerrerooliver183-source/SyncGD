@@ -3,10 +3,8 @@
 #include <Geode/modify/AppDelegate.hpp>
 #include <Geode/binding/GJAccountManager.hpp>
 #include <Geode/ui/Notification.hpp>
-#include <ghc/filesystem.hpp>
 
 using namespace geode::prelude;
-namespace fs = ghc::filesystem;
 
 class SyncManager : public CCNode {
 public:
@@ -55,23 +53,18 @@ public:
         if (!gameManager) return false;
         gameManager->save();
 
-        try {
-            auto savePath = geode::utils::dirs::getGameDir();
-            auto modSavePath = Mod::get()->getSaveDir();
-            
-            auto managerSrc = savePath / "CCGameManager.dat";
-            auto levelsSrc = savePath / "CCLocalLevels.dat";
-            auto dest = modSavePath / "data.dat";
-            
-            if (fs::exists(managerSrc)) {
-                fs::copy_file(managerSrc, dest, fs::copy_options::overwrite_existing);
-                return true;
-            }
-            return false;
-        } catch (const std::exception& e) {
-            log::error("SyncGD: Local save failed: {}", e.what());
-            return false;
+        auto savePath = geode::utils::dirs::getGameDir();
+        auto modSavePath = Mod::get()->getSaveDir();
+        
+        auto managerSrc = savePath / "CCGameManager.dat";
+        auto dest = modSavePath / "data.dat";
+        
+        if (std::filesystem::exists(managerSrc)) {
+            std::error_code ec;
+            std::filesystem::copy_file(managerSrc, dest, std::filesystem::copy_options::overwrite_existing, ec);
+            return !ec;
         }
+        return false;
     }
 
     void uploadToAccount() {

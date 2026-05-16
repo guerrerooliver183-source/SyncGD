@@ -45,8 +45,10 @@ class $modify(SRAccountLayer, AccountLayer) {
 
         m_fields->m_cancelMenu->addChild(m_fields->m_cancelButton);
         customHideLoadingUI();
-        m_mainLayer->addChild(m_fields->m_cancelMenu, 106);
-        m_mainLayer->addChild(m_fields->m_backupLabel, 106);
+        
+        // Use the actual layer instead of m_mainLayer if it's not available
+        this->addChild(m_fields->m_cancelMenu, 106);
+        this->addChild(m_fields->m_backupLabel, 106);
     }
 
     void cancelBackup(CCObject* sender) {
