@@ -4,8 +4,10 @@
 #include <Geode/modify/AccountLayer.hpp>
 #include <Geode/binding/GJAccountManager.hpp>
 #include <Geode/ui/Notification.hpp>
+#include <ghc/filesystem.hpp>
 
 using namespace geode::prelude;
+namespace fs = ghc::filesystem;
 
 class SyncManager : public CCNode {
 public:
@@ -16,7 +18,7 @@ public:
         static auto instance = [] {
             auto ret = new SyncManager();
             ret->init();
-            ret->retain(); // Keep it alive
+            ret->retain();
             return ret;
         }();
         return instance;
@@ -30,14 +32,10 @@ public:
 
     void updateSchedule() {
         this->unschedule(schedule_selector(SyncManager::onAutoSaveTimer));
-        
-        // Get interval from settings
         int64_t minutes = Mod::get()->getSettingValue<int64_t>("save-interval");
         if (minutes < 1) minutes = 5;
-        
         m_lastInterval = static_cast<float>(minutes) * 60.0f;
         this->schedule(schedule_selector(SyncManager::onAutoSaveTimer), m_lastInterval);
-        log::info("SyncGD: Auto-save scheduled every {} seconds", m_lastInterval);
     }
 
     void onAutoSaveTimer(float dt) {
@@ -45,6 +43,7 @@ public:
     }
 
     void performFullSync() {
+        Notification::create("Saving...", NotificationIcon::Info)->show();
         if (this->saveLocally()) {
             this->performCloudSave();
         }
@@ -54,34 +53,82 @@ public:
         auto gameManager = GameManager::get();
         if (!gameManager) return false;
         gameManager->save();
-        return true;
+
+        try {
+            auto savePath = geode::utils::dirs::getGameDir();
+            auto modSavePath = Mod::get()->getSaveDir();
+            
+            // Files to sync
+            std::vector<std::string> files = {"CCGameManager.dat", "CCLocalLevels.dat"};
+            
+            for (const auto& file : files) {
+                auto src = savePath / file;
+                auto dest = modSavePath / "data.dat"; // Consolidating or naming it data.dat as requested
+                
+                if (fs::exists(src)) {
+                    fs::copy_file(src, dest, fs::copy_options::overwrite_existing);
+                }
+            }
+            return true;
+        } catch (const std::exception& e) {
+            log::error("SyncGD: Failed to copy files: {}", e.what());
+            return false;
+        }
     }
 
     void performCloudSave() {
         m_pendingSync = true;
-        // The actual cloud save is handled by triggering a backup/sync request
-        // In a real mod, we might call GLM methods here
+        auto accountLayer = AccountLayer::create();
+        if (accountLayer) {
+            accountLayer->doBackup();
+        }
+    }
+
+    void autoLoad() {
+        auto modSavePath = Mod::get()->getSaveDir() / "data.dat";
+        if (fs::exists(modSavePath)) {
+            Notification::create("Loading data.dat...", NotificationIcon::Info)->show();
+            // Logic to restore files from data.dat would go here
+        }
     }
 };
 
 class $modify(SRAccountLayer, AccountLayer) {
     struct Fields {
         int m_attempts = 0;
+        CCLabelBMFont* m_statusLabel = nullptr;
     };
 
     void customSetup() {
         AccountLayer::customSetup();
+        
+        // Fullscreen Attempt UI
+        auto winSize = CCDirector::sharedDirector()->getWinSize();
+        auto bg = CCLayerColor::create({0, 0, 0, 150});
+        bg->setID("sync-overlay");
+        this->addChild(bg, 100);
+
+        m_fields->m_statusLabel = CCLabelBMFont::create("Syncing...", "goldFont.fnt");
+        m_fields->m_statusLabel->setPosition(winSize / 2);
+        bg->addChild(m_fields->m_statusLabel);
+        
+        bg->setVisible(false);
+    }
+
+    void updateStatus(const std::string& text) {
+        if (m_fields->m_statusLabel) {
+            m_fields->m_statusLabel->setString(text.c_str());
+            if (auto bg = this->getChildByID("sync-overlay")) {
+                bg->setVisible(true);
+            }
+        }
     }
 
     void backupAccountFailed(const BackupAccountError p0, const int p1) {
         if (static_cast<int>(p0) == -1 && m_fields->m_attempts < 5) {
             m_fields->m_attempts++;
-            Notification::create(
-                fmt::format("Backup failed. Retrying... (Attempt {})", m_fields->m_attempts),
-                NotificationIcon::Warning
-            )->show();
+            this->updateStatus(fmt::format("Retrying Backup... Attempt {}", m_fields->m_attempts));
             
-            // Delay retry slightly to be nicer to servers
             this->runAction(CCSequence::create(
                 CCDelayTime::create(2.0f),
                 CCCallFunc::create(this, callfunc_selector(SRAccountLayer::doBackup)),
@@ -89,28 +136,19 @@ class $modify(SRAccountLayer, AccountLayer) {
             ));
             return;
         }
-        
-        m_fields->m_attempts = 0;
         AccountLayer::backupAccountFailed(p0, p1);
     }
 
     void backupAccountFinished() {
         AccountLayer::backupAccountFinished();
-        Notification::create(
-            fmt::format("Backup successful! ({} attempts)", m_fields->m_attempts + 1),
-            NotificationIcon::Success
-        )->show();
-        m_fields->m_attempts = 0;
-        SyncManager::get()->m_pendingSync = false;
+        Notification::create("Backup Success!", NotificationIcon::Success)->show();
+        if (auto bg = this->getChildByID("sync-overlay")) bg->setVisible(false);
     }
 
     void syncAccountFailed(const BackupAccountError p0, const int p1) {
         if (static_cast<int>(p0) == -1 && m_fields->m_attempts < 5) {
             m_fields->m_attempts++;
-            Notification::create(
-                fmt::format("Sync failed. Retrying... (Attempt {})", m_fields->m_attempts),
-                NotificationIcon::Warning
-            )->show();
+            this->updateStatus(fmt::format("Retrying Sync... Attempt {}", m_fields->m_attempts));
             
             this->runAction(CCSequence::create(
                 CCDelayTime::create(2.0f),
@@ -119,18 +157,13 @@ class $modify(SRAccountLayer, AccountLayer) {
             ));
             return;
         }
-        
-        m_fields->m_attempts = 0;
         AccountLayer::syncAccountFailed(p0, p1);
     }
 
     void syncAccountFinished() {
         AccountLayer::syncAccountFinished();
-        Notification::create(
-            fmt::format("Sync successful! ({} attempts)", m_fields->m_attempts + 1),
-            NotificationIcon::Success
-        )->show();
-        m_fields->m_attempts = 0;
+        Notification::create("Sync Success!", NotificationIcon::Success)->show();
+        if (auto bg = this->getChildByID("sync-overlay")) bg->setVisible(false);
     }
 };
 
@@ -141,11 +174,11 @@ class $modify(MyMenuLayer, MenuLayer) {
         static bool firstLoad = true;
         if (firstLoad) {
             firstLoad = false;
-            // Add manager to a persistent node to ensure scheduler runs
             auto manager = SyncManager::get();
             if (!manager->getParent()) {
                 CCDirector::sharedDirector()->getNotificationNode()->addChild(manager);
             }
+            manager->autoLoad();
         }
         
         return true;
