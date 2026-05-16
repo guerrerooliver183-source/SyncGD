@@ -1,7 +1,6 @@
 #include <Geode/Geode.hpp>
 #include <Geode/modify/MenuLayer.hpp>
 #include <Geode/modify/AppDelegate.hpp>
-#include <Geode/modify/AccountLayer.hpp>
 #include <Geode/binding/GJAccountManager.hpp>
 #include <Geode/ui/Notification.hpp>
 #include <ghc/filesystem.hpp>
@@ -60,7 +59,6 @@ public:
             auto savePath = geode::utils::dirs::getGameDir();
             auto modSavePath = Mod::get()->getSaveDir();
             
-            // Consolidate game data into data.dat
             auto managerSrc = savePath / "CCGameManager.dat";
             auto levelsSrc = savePath / "CCLocalLevels.dat";
             auto dest = modSavePath / "data.dat";
@@ -80,7 +78,6 @@ public:
         auto am = GJAccountManager::sharedState();
         if (am && am->m_accountID > 0) {
             m_isSyncing = true;
-            // Create a temporary AccountLayer to use its backup logic
             auto al = AccountLayer::create();
             if (al) {
                 al->doBackup();
@@ -88,81 +85,6 @@ public:
         } else {
             Notification::create("SyncGD: Not logged in!", NotificationIcon::Error)->show();
         }
-    }
-};
-
-class $modify(SRAccountLayer, AccountLayer) {
-    struct Fields {
-        int m_attempts = 0;
-        CCLayerColor* m_overlay = nullptr;
-        CCLabelBMFont* m_statusLabel = nullptr;
-    };
-
-    void customSetup() {
-        AccountLayer::customSetup();
-        
-        auto winSize = CCDirector::sharedDirector()->getWinSize();
-        m_fields->m_overlay = CCLayerColor::create({0, 0, 0, 180});
-        m_fields->m_overlay->setID("sync-overlay");
-        this->addChild(m_fields->m_overlay, 100);
-
-        m_fields->m_statusLabel = CCLabelBMFont::create("Initiating Cloud Sync...", "goldFont.fnt");
-        m_fields->m_statusLabel->setPosition(winSize / 2);
-        m_fields->m_statusLabel->setScale(0.7f);
-        m_fields->m_overlay->addChild(m_fields->m_statusLabel);
-        
-        m_fields->m_overlay->setVisible(false);
-    }
-
-    void showOverlay(const std::string& text) {
-        if (m_fields->m_overlay && m_fields->m_statusLabel) {
-            m_fields->m_statusLabel->setString(text.c_str());
-            m_fields->m_overlay->setVisible(true);
-        }
-    }
-
-    void backupAccountFailed(const BackupAccountError p0, const int p1) {
-        if (static_cast<int>(p0) == -1 && m_fields->m_attempts < 5) {
-            m_fields->m_attempts++;
-            this->showOverlay(fmt::format("Cloud Save Failed.\nRetrying... Attempt {}", m_fields->m_attempts));
-            
-            this->runAction(CCSequence::create(
-                CCDelayTime::create(2.5f),
-                CCCallFunc::create(this, callfunc_selector(SRAccountLayer::doBackup)),
-                nullptr
-            ));
-            return;
-        }
-        SyncManager::get()->m_isSyncing = false;
-        AccountLayer::backupAccountFailed(p0, p1);
-    }
-
-    void backupAccountFinished() {
-        AccountLayer::backupAccountFinished();
-        Notification::create("Cloud Sync Complete!", NotificationIcon::Success)->show();
-        if (m_fields->m_overlay) m_fields->m_overlay->setVisible(false);
-        SyncManager::get()->m_isSyncing = false;
-    }
-
-    void syncAccountFailed(const BackupAccountError p0, const int p1) {
-        if (static_cast<int>(p0) == -1 && m_fields->m_attempts < 5) {
-            m_fields->m_attempts++;
-            this->showOverlay(fmt::format("Cloud Load Failed.\nRetrying... Attempt {}", m_fields->m_attempts));
-            
-            this->runAction(CCSequence::create(
-                CCDelayTime::create(2.5f),
-                CCCallFunc::create(this, callfunc_selector(SRAccountLayer::doSync)),
-                nullptr
-            ));
-            return;
-        }
-        AccountLayer::syncAccountFailed(p0, p1);
-    }
-
-    void syncAccountFinished() {
-        AccountLayer::syncAccountFinished();
-        Notification::create("Data Downloaded!", NotificationIcon::Success)->show();
-        if (m_fields->m_overlay) m_fields->m_overlay->setVisible(false);
     }
 };
 
@@ -178,7 +100,6 @@ class $modify(MyMenuLayer, MenuLayer) {
                 CCDirector::sharedDirector()->getNotificationNode()->addChild(manager);
             }
             
-            // Auto-Sync on startup if logged in
             auto am = GJAccountManager::sharedState();
             if (am && am->m_accountID > 0) {
                 auto al = AccountLayer::create();
