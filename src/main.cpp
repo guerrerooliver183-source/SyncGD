@@ -11,7 +11,7 @@ namespace fs = ghc::filesystem;
 
 class SyncManager : public CCNode {
 public:
-    bool m_pendingSync = false;
+    bool m_isSyncing = false;
     float m_lastInterval = 0.0f;
 
     static SyncManager* get() {
@@ -39,17 +39,19 @@ public:
     }
 
     void onAutoSaveTimer(float dt) {
-        this->performFullSync();
+        this->performFullSyncCycle();
     }
 
-    void performFullSync() {
-        Notification::create("Saving...", NotificationIcon::Info)->show();
-        if (this->saveLocally()) {
-            this->performCloudSave();
+    void performFullSyncCycle() {
+        if (m_isSyncing) return;
+        
+        Notification::create("SyncGD: Saving locally...", NotificationIcon::Info)->show();
+        if (this->saveToDataDat()) {
+            this->uploadToAccount();
         }
     }
 
-    bool saveLocally() {
+    bool saveToDataDat() {
         auto gameManager = GameManager::get();
         if (!gameManager) return false;
         gameManager->save();
@@ -58,37 +60,33 @@ public:
             auto savePath = geode::utils::dirs::getGameDir();
             auto modSavePath = Mod::get()->getSaveDir();
             
-            // Files to sync
-            std::vector<std::string> files = {"CCGameManager.dat", "CCLocalLevels.dat"};
+            // Consolidate game data into data.dat
+            auto managerSrc = savePath / "CCGameManager.dat";
+            auto levelsSrc = savePath / "CCLocalLevels.dat";
+            auto dest = modSavePath / "data.dat";
             
-            for (const auto& file : files) {
-                auto src = savePath / file;
-                auto dest = modSavePath / "data.dat"; // Consolidating or naming it data.dat as requested
-                
-                if (fs::exists(src)) {
-                    fs::copy_file(src, dest, fs::copy_options::overwrite_existing);
-                }
+            if (fs::exists(managerSrc)) {
+                fs::copy_file(managerSrc, dest, fs::copy_options::overwrite_existing);
+                return true;
             }
-            return true;
+            return false;
         } catch (const std::exception& e) {
-            log::error("SyncGD: Failed to copy files: {}", e.what());
+            log::error("SyncGD: Local save failed: {}", e.what());
             return false;
         }
     }
 
-    void performCloudSave() {
-        m_pendingSync = true;
-        auto accountLayer = AccountLayer::create();
-        if (accountLayer) {
-            accountLayer->doBackup();
-        }
-    }
-
-    void autoLoad() {
-        auto modSavePath = Mod::get()->getSaveDir() / "data.dat";
-        if (fs::exists(modSavePath)) {
-            Notification::create("Loading data.dat...", NotificationIcon::Info)->show();
-            // Logic to restore files from data.dat would go here
+    void uploadToAccount() {
+        auto am = GJAccountManager::sharedState();
+        if (am && am->m_accountID > 0) {
+            m_isSyncing = true;
+            // Create a temporary AccountLayer to use its backup logic
+            auto al = AccountLayer::create();
+            if (al) {
+                al->doBackup();
+            }
+        } else {
+            Notification::create("SyncGD: Not logged in!", NotificationIcon::Error)->show();
         }
     }
 };
@@ -96,62 +94,63 @@ public:
 class $modify(SRAccountLayer, AccountLayer) {
     struct Fields {
         int m_attempts = 0;
+        CCLayerColor* m_overlay = nullptr;
         CCLabelBMFont* m_statusLabel = nullptr;
     };
 
     void customSetup() {
         AccountLayer::customSetup();
         
-        // Fullscreen Attempt UI
         auto winSize = CCDirector::sharedDirector()->getWinSize();
-        auto bg = CCLayerColor::create({0, 0, 0, 150});
-        bg->setID("sync-overlay");
-        this->addChild(bg, 100);
+        m_fields->m_overlay = CCLayerColor::create({0, 0, 0, 180});
+        m_fields->m_overlay->setID("sync-overlay");
+        this->addChild(m_fields->m_overlay, 100);
 
-        m_fields->m_statusLabel = CCLabelBMFont::create("Syncing...", "goldFont.fnt");
+        m_fields->m_statusLabel = CCLabelBMFont::create("Initiating Cloud Sync...", "goldFont.fnt");
         m_fields->m_statusLabel->setPosition(winSize / 2);
-        bg->addChild(m_fields->m_statusLabel);
+        m_fields->m_statusLabel->setScale(0.7f);
+        m_fields->m_overlay->addChild(m_fields->m_statusLabel);
         
-        bg->setVisible(false);
+        m_fields->m_overlay->setVisible(false);
     }
 
-    void updateStatus(const std::string& text) {
-        if (m_fields->m_statusLabel) {
+    void showOverlay(const std::string& text) {
+        if (m_fields->m_overlay && m_fields->m_statusLabel) {
             m_fields->m_statusLabel->setString(text.c_str());
-            if (auto bg = this->getChildByID("sync-overlay")) {
-                bg->setVisible(true);
-            }
+            m_fields->m_overlay->setVisible(true);
         }
     }
 
     void backupAccountFailed(const BackupAccountError p0, const int p1) {
         if (static_cast<int>(p0) == -1 && m_fields->m_attempts < 5) {
             m_fields->m_attempts++;
-            this->updateStatus(fmt::format("Retrying Backup... Attempt {}", m_fields->m_attempts));
+            this->showOverlay(fmt::format("Cloud Save Failed.\nRetrying... Attempt {}", m_fields->m_attempts));
             
             this->runAction(CCSequence::create(
-                CCDelayTime::create(2.0f),
+                CCDelayTime::create(2.5f),
                 CCCallFunc::create(this, callfunc_selector(SRAccountLayer::doBackup)),
                 nullptr
             ));
             return;
         }
+        SyncManager::get()->m_isSyncing = false;
         AccountLayer::backupAccountFailed(p0, p1);
     }
 
     void backupAccountFinished() {
         AccountLayer::backupAccountFinished();
-        Notification::create("Backup Success!", NotificationIcon::Success)->show();
-        if (auto bg = this->getChildByID("sync-overlay")) bg->setVisible(false);
+        Notification::create("Cloud Sync Complete!", NotificationIcon::Success)->show();
+        if (m_fields->m_overlay) m_fields->m_overlay->setVisible(false);
+        SyncManager::get()->m_isSyncing = false;
     }
 
     void syncAccountFailed(const BackupAccountError p0, const int p1) {
         if (static_cast<int>(p0) == -1 && m_fields->m_attempts < 5) {
             m_fields->m_attempts++;
-            this->updateStatus(fmt::format("Retrying Sync... Attempt {}", m_fields->m_attempts));
+            this->showOverlay(fmt::format("Cloud Load Failed.\nRetrying... Attempt {}", m_fields->m_attempts));
             
             this->runAction(CCSequence::create(
-                CCDelayTime::create(2.0f),
+                CCDelayTime::create(2.5f),
                 CCCallFunc::create(this, callfunc_selector(SRAccountLayer::doSync)),
                 nullptr
             ));
@@ -162,8 +161,8 @@ class $modify(SRAccountLayer, AccountLayer) {
 
     void syncAccountFinished() {
         AccountLayer::syncAccountFinished();
-        Notification::create("Sync Success!", NotificationIcon::Success)->show();
-        if (auto bg = this->getChildByID("sync-overlay")) bg->setVisible(false);
+        Notification::create("Data Downloaded!", NotificationIcon::Success)->show();
+        if (m_fields->m_overlay) m_fields->m_overlay->setVisible(false);
     }
 };
 
@@ -178,7 +177,15 @@ class $modify(MyMenuLayer, MenuLayer) {
             if (!manager->getParent()) {
                 CCDirector::sharedDirector()->getNotificationNode()->addChild(manager);
             }
-            manager->autoLoad();
+            
+            // Auto-Sync on startup if logged in
+            auto am = GJAccountManager::sharedState();
+            if (am && am->m_accountID > 0) {
+                auto al = AccountLayer::create();
+                if (al) {
+                    al->doSync();
+                }
+            }
         }
         
         return true;
@@ -188,6 +195,6 @@ class $modify(MyMenuLayer, MenuLayer) {
 class $modify(AppDelegate) {
     void applicationDidEnterBackground() {
         AppDelegate::applicationDidEnterBackground();
-        SyncManager::get()->performFullSync();
+        SyncManager::get()->performFullSyncCycle();
     }
 };
