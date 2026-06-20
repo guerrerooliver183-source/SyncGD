@@ -1,0 +1,109 @@
+{
+	"geode": "5.7.0",
+	"gd": {
+		"win": "2.2081",
+		"android": "2.2081",
+		"mac": "2.2081",
+		"ios": "2.2081"
+	},
+	"id": "guerrerooliver183-source.syncgd",
+	"name": "SyncGD",
+	"version": "v1.0.0",
+	"developer": "guerrerooliver183-source",
+	"description": "Auto-syncs your save data across all devices with configurable intervals and integrated save retry functionality.",
+	"links": {
+		"source": "https://github.com/guerrerooliver183-source/SyncGD",
+		"community": "https://discord.gg/syncgd"
+	},
+	"tags": [
+		"online",
+		"enhancement",
+		"utility",
+		"interface",
+		"bugfix",
+		"performance"
+	],
+	"incompatibilities": [
+		{
+			"id": "sorkopiko.saveretry",
+			"importance": "conflicting",
+			"version": "*"
+		}
+	],
+	"dependencies": {
+		"geode.node-ids": ">=v1.23.3",
+		"miskaa.notif": ">=v1.0.0"
+	},
+	"settings": {
+		"enabled": {
+			"name": "Enabled",
+			"description": "Enable or disable auto-sync functionality",
+			"type": "bool",
+			"default": true
+		},
+		"auto-save-interval": {
+			"name": "Auto-Save Interval",
+			"description": "How often (in minutes) to automatically save your progress to the cloud",
+			"type": "int",
+			"default": 5,
+			"min": 1,
+			"max": 60,
+			"control": {
+				"slider": false
+			}
+		},
+		"auto-load-on-startup": {
+			"name": "Auto-Load on Startup",
+			"description": "Automatically check for and download cloud saves when starting the game",
+			"type": "bool",
+			"default": true
+		},
+		"detect-changes": {
+			"name": "Detect Cloud Changes",
+			"description": "Detect when your account has new progress on another device and prompt to sync",
+			"type": "bool",
+			"default": true
+		},
+		"show-notifications": {
+			"name": "Show Notifications",
+			"description": "Display notifications for sync operations (requires miskaa.notif)",
+			"type": "bool",
+			"default": true
+		},
+		"save-retry-enabled": {
+			"name": "Save Retry",
+			"description": "Enable the integrated Save Retry functionality (replaces sorkopiko.saveretry)",
+			"type": "bool",
+			"default": true
+		},
+		"max-retry-attempts": {
+			"name": "Max Retry Attempts",
+			"description": "Maximum number of retry attempts for failed saves (0 = unlimited)",
+			"type": "int",
+			"default": 10,
+			"min": 0,
+			"max": 100,
+			"control": {
+				"slider": false
+			}
+		},
+		"show-retry-attempts": {
+			"name": "Show Retry Attempts",
+			"description": "Display the number of retry attempts in the Account menu",
+			"type": "bool",
+			"default": true
+		},
+		"cancel-retry-button": {
+			"name": "Show Cancel Button",
+			"description": "Add a cancel button during retry attempts",
+			"type": "bool",
+			"default": true
+		},
+		"debug-logging": {
+			"name": "Debug Logging",
+			"description": "Enable verbose logging for troubleshooting",
+			"type": "bool",
+			"default": false
+		}
+	}
+}

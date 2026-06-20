@@ -1,0 +1,17 @@
+# Build files
+build/
+.cache/
+cmake-build-*/
+
+# Geode specific
+.geode/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
