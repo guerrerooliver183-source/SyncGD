@@ -40,7 +40,7 @@ The integrated Save Retry feature:
 - Automatically retries failed saves
 - Shows attempt counter (optional)
 - Cancel button to stop retrying (optional)
-- Configurable max retry attempts
+- Configurable max retry attempts (0 = unlimited)
 - Smart handling of oversized saves
 
 ## Building from Source

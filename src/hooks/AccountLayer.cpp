@@ -9,7 +9,7 @@ using namespace geode::prelude;
 
 /**
  * AccountLayer hook - Integrates SaveRetry functionality
- * and handles backup/sync completion and failure events
+ * Shows retry attempts UI ONLY on manual Save/Load clicks
  */
 class $modify(SyncGDAccountLayer, AccountLayer) {
     struct Fields {
@@ -18,7 +18,8 @@ class $modify(SyncGDAccountLayer, AccountLayer) {
         CCLabelBMFont* m_backupLabel = nullptr;
         int m_attempts = 1;
         bool m_cancelled = false;
-        bool m_isRetrying = false;
+        // Tracks whether the current operation was triggered manually by the user
+        bool m_isManualOperation = false;
     };
 
     void customSetup() {
@@ -26,9 +27,9 @@ class $modify(SyncGDAccountLayer, AccountLayer) {
         
         auto manager = SyncManager::get();
         
-        // Only show retry UI if Save Retry is enabled
+        // Only create retry UI elements if Save Retry is enabled
+        // and at least one of (show attempts, show cancel) is on
         if (!manager->isSaveRetryEnabled()) return;
-        
         if (!manager->shouldShowRetryAttempts() && !manager->shouldShowCancelButton()) return;
         
         m_fields->m_cancelMenu = CCMenu::create();
@@ -76,7 +77,11 @@ class $modify(SyncGDAccountLayer, AccountLayer) {
         m_fields->m_cancelled = true;
     }
     
+    // Shows the retry UI (attempt counter + cancel button) - ONLY for manual operations
     void customShowLoadingUI() {
+        // Only show UI if this is a user-initiated manual save/load
+        if (!m_fields->m_isManualOperation) return;
+        
         auto manager = SyncManager::get();
         if (!manager->isSaveRetryEnabled()) return;
         
@@ -94,10 +99,11 @@ class $modify(SyncGDAccountLayer, AccountLayer) {
         }
     }
     
+    // Hides the retry UI and resets state
     void customHideLoadingUI() {
         m_fields->m_attempts = 1;
         m_fields->m_cancelled = false;
-        m_fields->m_isRetrying = false;
+        m_fields->m_isManualOperation = false;
         
         if (m_fields->m_cancelMenu) {
             m_fields->m_cancelMenu->setEnabled(false);
@@ -117,7 +123,10 @@ class $modify(SyncGDAccountLayer, AccountLayer) {
         }
     }
     
+    // Shows "Backup successful (N attempts)" text - only for manual ops
     void showAttempts() {
+        if (!m_fields->m_isManualOperation) return;
+        
         auto manager = SyncManager::get();
         if (!manager->shouldShowRetryAttempts()) return;
         
@@ -129,7 +138,10 @@ class $modify(SyncGDAccountLayer, AccountLayer) {
         m_textArea->colorAllCharactersTo({0, 255, 0});
     }
     
+    // Shows "Sync successful (N attempts)" text - only for manual ops
     void showSyncAttempts() {
+        if (!m_fields->m_isManualOperation) return;
+        
         auto manager = SyncManager::get();
         if (!manager->shouldShowRetryAttempts()) return;
         
@@ -150,16 +162,17 @@ class $modify(SyncGDAccountLayer, AccountLayer) {
             log::info("[SyncGD] Backup failed: {} {}", static_cast<int>(p0), p1);
         }
         
-        // SaveRetry logic
+        // SaveRetry logic - only for manual operations (auto-save uses silent retry via notification only)
         if (manager->isSaveRetryEnabled() && 
             static_cast<int>(p0) == -1 && 
             !m_fields->m_cancelled) {
             
             int maxAttempts = manager->getMaxRetryAttempts();
             if (maxAttempts > 0 && m_fields->m_attempts >= maxAttempts) {
-                // Max attempts reached
                 customHideLoadingUI();
-                manager->sendErrorNotification(fmt::format("Backup failed after {} attempts", maxAttempts));
+                if (m_fields->m_isManualOperation) {
+                    manager->sendErrorNotification(fmt::format("Backup failed after {} attempts", maxAttempts));
+                }
                 AccountLayer::backupAccountFailed(p0, p1);
                 return;
             }
@@ -178,13 +191,18 @@ class $modify(SyncGDAccountLayer, AccountLayer) {
                 return;
             }
             
-            manager->sendWarningNotification(fmt::format("Backup failed, retrying... (Attempt {})", m_fields->m_attempts));
+            // For manual ops, show attempt count on-screen; for auto, just notify
+            if (m_fields->m_isManualOperation) {
+                manager->sendWarningNotification(fmt::format("Backup failed, retrying... (Attempt {})", m_fields->m_attempts));
+            }
             this->doBackup();
             return;
         }
         
         customHideLoadingUI();
-        manager->sendErrorNotification("Backup failed!");
+        if (m_fields->m_isManualOperation) {
+            manager->sendErrorNotification("Backup failed!");
+        }
         AccountLayer::backupAccountFailed(p0, p1);
     }
     
@@ -197,10 +215,10 @@ class $modify(SyncGDAccountLayer, AccountLayer) {
         
         AccountLayer::backupAccountFinished();
         
-        if (manager->isSaveRetryEnabled()) {
+        if (manager->isSaveRetryEnabled() && m_fields->m_isManualOperation) {
             showAttempts();
-            customHideLoadingUI();
         }
+        customHideLoadingUI();
         
         manager->sendSuccessNotification("Save data backed up to cloud!");
     }
@@ -214,7 +232,7 @@ class $modify(SyncGDAccountLayer, AccountLayer) {
             log::info("[SyncGD] Sync failed: {} {}", static_cast<int>(p0), p1);
         }
         
-        // SaveRetry logic for sync
+        // SaveRetry logic for sync - only active on manual operations
         if (manager->isSaveRetryEnabled() && 
             static_cast<int>(p0) == -1 && 
             !m_fields->m_cancelled) {
@@ -222,19 +240,25 @@ class $modify(SyncGDAccountLayer, AccountLayer) {
             int maxAttempts = manager->getMaxRetryAttempts();
             if (maxAttempts > 0 && m_fields->m_attempts >= maxAttempts) {
                 customHideLoadingUI();
-                manager->sendErrorNotification(fmt::format("Sync failed after {} attempts", maxAttempts));
+                if (m_fields->m_isManualOperation) {
+                    manager->sendErrorNotification(fmt::format("Sync failed after {} attempts", maxAttempts));
+                }
                 AccountLayer::syncAccountFailed(p0, p1);
                 return;
             }
             
             incrementAttempt();
-            manager->sendWarningNotification(fmt::format("Sync failed, retrying... (Attempt {})", m_fields->m_attempts));
+            if (m_fields->m_isManualOperation) {
+                manager->sendWarningNotification(fmt::format("Sync failed, retrying... (Attempt {})", m_fields->m_attempts));
+            }
             this->doSync();
             return;
         }
         
         customHideLoadingUI();
-        manager->sendErrorNotification("Sync failed!");
+        if (m_fields->m_isManualOperation) {
+            manager->sendErrorNotification("Sync failed!");
+        }
         AccountLayer::syncAccountFailed(p0, p1);
     }
     
@@ -247,15 +271,17 @@ class $modify(SyncGDAccountLayer, AccountLayer) {
         
         AccountLayer::syncAccountFinished();
         
-        if (manager->isSaveRetryEnabled()) {
+        if (manager->isSaveRetryEnabled() && m_fields->m_isManualOperation) {
             showSyncAttempts();
-            customHideLoadingUI();
         }
+        customHideLoadingUI();
         
         manager->sendSuccessNotification("Save data synced from cloud!");
     }
     
     // ===== DIALOG HANDLING =====
+    // This is called when the user clicks "Yes" on the Save/Load confirmation dialog
+    // It marks the operation as MANUAL - only then the retry UI is shown
     
     void FLAlert_Clicked(FLAlertLayer *p0, bool p1) {
         AccountLayer::FLAlert_Clicked(p0, p1);
@@ -263,11 +289,15 @@ class $modify(SyncGDAccountLayer, AccountLayer) {
         auto manager = SyncManager::get();
         
         if (p1 == true) {
+            // User confirmed a manual Save or Load operation
+            m_fields->m_isManualOperation = true;
+            m_fields->m_attempts = 1;
+            m_fields->m_cancelled = false;
+            
             if (manager->isSaveRetryEnabled()) {
                 customShowLoadingUI();
             }
             
-            // Show notification that operation started
             if (manager->shouldShowNotifications()) {
                 manager->sendNotification("Cloud operation started...", "info");
             }

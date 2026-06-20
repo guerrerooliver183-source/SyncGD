@@ -12,8 +12,7 @@
 	"developer": "guerrerooliver183-source",
 	"description": "Auto-syncs your save data across all devices with configurable intervals and integrated save retry functionality.",
 	"links": {
-		"source": "https://github.com/guerrerooliver183-source/SyncGD",
-		"community": "https://discord.gg/syncgd"
+		"source": "https://github.com/guerrerooliver183-source/SyncGD"
 	},
 	"tags": [
 		"online",
@@ -80,7 +79,7 @@
 			"name": "Max Retry Attempts",
 			"description": "Maximum number of retry attempts for failed saves (0 = unlimited)",
 			"type": "int",
-			"default": 10,
+			"default": 0,
 			"min": 0,
 			"max": 100,
 			"control": {

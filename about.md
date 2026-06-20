@@ -40,7 +40,7 @@ All settings are available in **Geode > Mods > SyncGD > Settings**:
 | Detect Cloud Changes | Detect progress from other devices | ON |
 | Show Notifications | Display sync notifications | ON |
 | Save Retry | Enable automatic save retrying | ON |
-| Max Retry Attempts | Maximum retries (0 = unlimited) | 10 |
+| Max Retry Attempts | Maximum retries (0 = unlimited) | 0 |
 | Show Retry Attempts | Display attempt counter | ON |
 | Show Cancel Button | Add cancel button during retries | ON |
 | Debug Logging | Verbose console logging | OFF |
